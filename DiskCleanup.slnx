@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="DiskCleanup.Core/DiskCleanup.Core.csproj" />
+  <Project Path="DiskCleanup.Tests/DiskCleanup.Tests.csproj" />
+  <Project Path="DiskCleanup.Wpf/DiskCleanup.Wpf.csproj" />
+  <Project Path="DiskCleanup/DiskCleanup.csproj" />
+</Solution>
