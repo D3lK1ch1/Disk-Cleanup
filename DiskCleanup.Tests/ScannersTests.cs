@@ -1,0 +1,228 @@
+using DiskCleanup.Core;
+
+namespace DiskCleanup.Tests;
+
+// All tests build a throwaway fake .claude/.codex-shaped tree under the OS
+// temp directory - never against the real ~/.claude or ~/.codex.
+public class ScannersTests
+{
+    static string CreateFakeClaudeTree()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Claude_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+
+        // Top-level files that must never be touched or offered.
+        File.WriteAllText(Path.Combine(root, ".credentials.json"), "{}");
+        File.WriteAllText(Path.Combine(root, "settings.json"), "{}");
+
+        var snapshots = Path.Combine(root, "shell-snapshots");
+        Directory.CreateDirectory(snapshots);
+        File.WriteAllText(Path.Combine(snapshots, "snap.sh"), "echo hi");
+
+        // A project with one stale session file and an adjacent memory/ dir
+        // that must never appear in results.
+        var project = Path.Combine(root, "projects", "fake-project");
+        Directory.CreateDirectory(project);
+        var staleFile = Path.Combine(project, "old.jsonl");
+        File.WriteAllText(staleFile,
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Help me clean up disk space please\"}}\n");
+        File.SetLastWriteTime(staleFile, DateTime.Now.AddDays(-100));
+
+        var memoryDir = Path.Combine(project, "memory");
+        Directory.CreateDirectory(memoryDir);
+        File.WriteAllText(Path.Combine(memoryDir, "should-never-appear.txt"), "persistent memory, never prune");
+
+        // A project with only a memory/ dir, no loose session files.
+        var memoryOnlyProject = Path.Combine(root, "projects", "memory-only-project");
+        Directory.CreateDirectory(Path.Combine(memoryOnlyProject, "memory"));
+        File.WriteAllText(Path.Combine(memoryOnlyProject, "memory", "notes.txt"), "keep");
+
+        return root;
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_NeverReturnsRootItself()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            var items = Scanners.ScanClaudeFolder(root);
+            Assert.DoesNotContain(items, i => string.Equals(i.Path, root, StringComparison.OrdinalIgnoreCase));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_NeverReturnsMemoryContents()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            var items = Scanners.ScanClaudeFolder(root);
+            Assert.DoesNotContain(items, i => i.Path != null && i.Path.Contains("should-never-appear.txt"));
+            Assert.DoesNotContain(items, i => i.Path != null &&
+                i.Path.Contains($"{Path.DirectorySeparatorChar}memory{Path.DirectorySeparatorChar}"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_FindsOldSessionFileWithExcerptAndCorrectAction()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            var items = Scanners.ScanClaudeFolder(root);
+            var item = Assert.Single(items, i => i.Path != null && i.Path.EndsWith("old.jsonl"));
+
+            Assert.Equal(ActionKind.MoveFileToRecycleBin, item.Action);
+            Assert.Contains("Help me clean up disk space", item.Reason);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_ProjectWithOnlyMemory_ProducesNoItems()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            var items = Scanners.ScanClaudeFolder(root);
+            Assert.DoesNotContain(items, i => i.Label.Contains("memory-only-project"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_VeryRecentSessionFile_StillShown()
+    {
+        // No date filter anymore - a brand-new, never-revisited session must
+        // show up just as readily as an old one (the whole point of dropping
+        // the day-based threshold).
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            var recentDir = Path.Combine(root, "projects", "recent-project");
+            Directory.CreateDirectory(recentDir);
+            var recentFile = Path.Combine(recentDir, "recent.jsonl");
+            File.WriteAllText(recentFile, "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n");
+
+            var items = Scanners.ScanClaudeFolder(root);
+            Assert.Contains(items, i => i.Path == recentFile);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_ActiveSessionExcludedRegardlessOfAge()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            const string activeSessionId = "11111111-2222-3333-4444-555555555555";
+
+            var sessionsDir = Path.Combine(root, "sessions");
+            Directory.CreateDirectory(sessionsDir);
+            File.WriteAllText(Path.Combine(sessionsDir, "9999.json"),
+                $"{{\"pid\":9999,\"sessionId\":\"{activeSessionId}\",\"status\":\"busy\"}}");
+
+            var activeProject = Path.Combine(root, "projects", "active-project");
+            Directory.CreateDirectory(activeProject);
+            var activeFile = Path.Combine(activeProject, activeSessionId + ".jsonl");
+            File.WriteAllText(activeFile, "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"in progress\"}}\n");
+            File.SetLastWriteTime(activeFile, DateTime.Now.AddDays(-200)); // old write time must not matter
+
+            var items = Scanners.ScanClaudeFolder(root);
+            Assert.DoesNotContain(items, i => i.Path == activeFile);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    static string CreateFakeCodexTree()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Codex_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+
+        File.WriteAllText(Path.Combine(root, "auth.json"), "{}");
+
+        var sandboxBin = Path.Combine(root, ".sandbox-bin");
+        Directory.CreateDirectory(sandboxBin);
+        File.WriteAllText(Path.Combine(sandboxBin, "tool.exe"), "binary");
+
+        var memories = Path.Combine(root, "memories");
+        Directory.CreateDirectory(memories);
+        File.WriteAllText(Path.Combine(memories, "should-never-appear.txt"), "persistent, never prune");
+
+        var sessionsDir = Path.Combine(root, "sessions", "2026", "06", "17");
+        Directory.CreateDirectory(sessionsDir);
+        var staleFile = Path.Combine(sessionsDir, "rollout-old.jsonl");
+        File.WriteAllText(staleFile,
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"<environment_context>noise</environment_context>\"}]}}\n" +
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Summarize this codebase for me\"}]}}\n");
+        File.SetLastWriteTime(staleFile, DateTime.Now.AddDays(-100));
+
+        return root;
+    }
+
+    [Fact]
+    public void ScanCodexFolder_NeverReturnsRootOrSandboxOrMemories()
+    {
+        var root = CreateFakeCodexTree();
+        try
+        {
+            var items = Scanners.ScanCodexFolder(root);
+            Assert.DoesNotContain(items, i => string.Equals(i.Path, root, StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(items, i => i.Path != null && i.Path.Contains(".sandbox-bin"));
+            Assert.DoesNotContain(items, i => i.Path != null && i.Path.Contains("should-never-appear.txt"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanCodexFolder_FindsOldSessionSkippingEnvironmentContextNoise()
+    {
+        var root = CreateFakeCodexTree();
+        try
+        {
+            var items = Scanners.ScanCodexFolder(root);
+            var item = Assert.Single(items, i => i.Path != null && i.Path.EndsWith("rollout-old.jsonl"));
+
+            Assert.Equal(ActionKind.MoveFileToRecycleBin, item.Action);
+            Assert.Contains("Summarize this codebase", item.Reason);
+            Assert.DoesNotContain("environment_context", item.Reason);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("Microsoft.VCLibs.140.00_8wekyb3d8bbwe", true)]
+    [InlineData("Microsoft.WindowsAppRuntime.1.4_8wekyb3d8bbwe", true)]
+    [InlineData("AdobeAcrobatReaderCoreApp_pc75e8sa7ep4e", false)]
+    [InlineData("45442stefano64.GPXviewerandrecorder_bszswgksnzmf2", false)]
+    public void IsSharedRuntimePackage_MatchesKnownFrameworkPrefixesOnly(string folderName, bool expected)
+    {
+        Assert.Equal(expected, Scanners.IsSharedRuntimePackage(folderName));
+    }
+
+    [Fact]
+    public void ScanCodexFolder_VeryRecentlyModifiedFile_ExcludedAsLikelyActive()
+    {
+        // Codex has no live-PID-to-session mapping to check precisely (unlike
+        // Claude's sessions/*.json), so anything modified within the last
+        // ~30 minutes is treated as possibly still being written to.
+        var root = CreateFakeCodexTree();
+        try
+        {
+            var sessionsDir = Path.Combine(root, "sessions", "2026", "06", "22");
+            Directory.CreateDirectory(sessionsDir);
+            var freshFile = Path.Combine(sessionsDir, "rollout-fresh.jsonl");
+            File.WriteAllText(freshFile,
+                "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"just started\"}]}}\n");
+            // LastWriteTime defaults to now.
+
+            var items = Scanners.ScanCodexFolder(root);
+            Assert.DoesNotContain(items, i => i.Path == freshFile);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+}
