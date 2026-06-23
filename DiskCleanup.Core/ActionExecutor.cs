@@ -47,6 +47,7 @@ public static class ActionExecutor
             ActionKind.DeleteContents => DeleteContents(item),
             ActionKind.DeleteFolder => DeleteFolder(item),
             ActionKind.MoveFolderToRecycleBin => MoveFolderToRecycleBin(item),
+            ActionKind.MoveFileToRecycleBin => MoveFileToRecycleBin(item),
             ActionKind.SuggestCommand => new ActionResult(item, true, $"Suggested command (run yourself): {item.CommandSuggestion}"),
             _ => new ActionResult(item, true, "No action taken (informational only)."),
         };
@@ -150,7 +151,21 @@ public static class ActionExecutor
     {
         if (item.Path == null || !Directory.Exists(item.Path))
             return new ActionResult(item, false, "Path not found.");
+        return MoveToRecycleBin(item);
+    }
 
+    static ActionResult MoveFileToRecycleBin(CheckItem item)
+    {
+        if (item.Path == null || !File.Exists(item.Path))
+            return new ActionResult(item, false, "File not found.");
+        return MoveToRecycleBin(item);
+    }
+
+    // SHFileOperation/FO_DELETE works the same whether pFrom is a file or a
+    // directory - the only difference between the two callers above is which
+    // existence check makes sense first.
+    static ActionResult MoveToRecycleBin(CheckItem item)
+    {
         try
         {
             // pFrom must be double-null-terminated; the extra '\0' plus the

@@ -52,6 +52,22 @@ public partial class MainWindow : Window
         ApplyFilter();
     }
 
+    private void ItemsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ItemsGrid.SelectedItem is not CheckItemViewModel vm)
+        {
+            DetailsText.Text = "Select an item to see its full path and why it's categorized that way.";
+            return;
+        }
+
+        var details = vm.Label;
+        if (!string.IsNullOrWhiteSpace(vm.Item.Path))
+            details += $"\n\nFull path: {vm.Item.Path}";
+        if (!string.IsNullOrWhiteSpace(vm.Reason))
+            details += $"\n\n{vm.Reason}";
+        DetailsText.Text = details;
+    }
+
     private void ApplyFilter()
     {
         var selected = (RiskFilterCombo.SelectedItem as ComboBoxItem)?.Content as string ?? "All";
@@ -85,7 +101,7 @@ public partial class MainWindow : Window
             vm.IsSelected = false;
     }
 
-    private void CleanButton_Click(object sender, RoutedEventArgs e)
+    private async void CleanButton_Click(object sender, RoutedEventArgs e)
     {
         // Flush any pending checkbox edit in the grid before reading IsSelected —
         // a click can register visually without committing to the bound source
@@ -110,13 +126,23 @@ public partial class MainWindow : Window
             return;
         }
 
+        CleanButton.IsEnabled = false;
+        ScanButton.IsEnabled = false;
+        StatusText.Text = $"Cleaning {selected.Count} item(s)...";
+
         var systemDrive = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))!;
         var freeBefore = new DriveInfo(systemDrive).AvailableFreeSpace;
 
+        // The actual delete/move work (file I/O, SHFileOperation, process
+        // spawns for SuggestCommand-less actions) runs off the UI thread so
+        // large cleanups don't freeze the window. Touching _allItems/
+        // _visibleItems must stay on the UI thread, so that happens after.
+        var results = await Task.Run(() =>
+            selected.Select(vm => (Vm: vm, Result: ActionExecutor.Execute(vm.Item))).ToList());
+
         var log = new System.Text.StringBuilder();
-        foreach (var vm in selected)
+        foreach (var (vm, result) in results)
         {
-            var result = ActionExecutor.Execute(vm.Item);
             var status = result.Success ? "OK" : "FAILED";
             log.AppendLine($"[{status}] {vm.Label}: {result.Message}");
 
@@ -136,6 +162,8 @@ public partial class MainWindow : Window
 
         LogBox.Text = log.ToString();
         StatusText.Text = "Done.";
+        CleanButton.IsEnabled = true;
+        ScanButton.IsEnabled = true;
         UpdateFreeSpaceText();
     }
 

@@ -7,6 +7,7 @@ public enum ActionKind
     DeleteContents,
     DeleteFolder,
     MoveFolderToRecycleBin,
+    MoveFileToRecycleBin,
     SuggestCommand,
 }
 
@@ -17,7 +18,8 @@ public record CheckItem(
     string? Path = null,
     string? SizeOverride = null,
     ActionKind Action = ActionKind.None,
-    string? CommandSuggestion = null)
+    string? CommandSuggestion = null,
+    string? Reason = null)
 {
     public string FormattedSize => SizeOverride ?? Format(SizeBytes);
 
