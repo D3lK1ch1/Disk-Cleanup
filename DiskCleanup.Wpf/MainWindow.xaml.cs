@@ -32,6 +32,7 @@ public partial class MainWindow : Window
             result.AddRange(Scanners.VsCodeCache());
             result.AddRange(Scanners.Wsl());
             result.AddRange(Scanners.Docker());
+            result.AddRange(Scanners.DockerVhdxBloat());
             result.AddRange(Scanners.DownloadsTopFolders());
             result.AddRange(Scanners.StalePackages());
             result.AddRange(Scanners.AiFolders());

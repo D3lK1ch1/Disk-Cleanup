@@ -23,6 +23,18 @@ public record CheckItem(
 {
     public string FormattedSize => SizeOverride ?? Format(SizeBytes);
 
+    public string ActionDescription => Action switch
+    {
+        ActionKind.None                   => "info only",
+        ActionKind.EmptyRecycleBin        => "empty Recycle Bin",
+        ActionKind.DeleteContents         => "delete contents",
+        ActionKind.DeleteFolder           => "delete folder",
+        ActionKind.MoveFolderToRecycleBin => "→ Recycle Bin",
+        ActionKind.MoveFileToRecycleBin   => "→ Recycle Bin",
+        ActionKind.SuggestCommand         => "suggest command",
+        _                                 => "unknown",
+    };
+
     static string Format(long bytes)
     {
         string[] units = { "B", "KB", "MB", "GB", "TB" };

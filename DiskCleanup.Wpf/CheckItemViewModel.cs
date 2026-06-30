@@ -18,6 +18,7 @@ public class CheckItemViewModel : INotifyPropertyChanged
     public string Size => Item.FormattedSize;
     public string Risk => Item.Risk;
     public string? Reason => Item.Reason;
+    public string ActionDescription => Item.ActionDescription;
 
     // INFO items (e.g. installed-app list) and items with no action have nothing to clean.
     public bool CanSelect => Item.Action != ActionKind.None;

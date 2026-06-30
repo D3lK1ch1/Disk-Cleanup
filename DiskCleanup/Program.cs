@@ -7,6 +7,7 @@ items.AddRange(Scanners.TempFolders());
 items.AddRange(Scanners.VsCodeCache());
 items.AddRange(Scanners.Wsl());
 items.AddRange(Scanners.Docker());
+items.AddRange(Scanners.DockerVhdxBloat());
 items.AddRange(Scanners.DownloadsTopFolders());
 items.AddRange(Scanners.StalePackages());
 items.AddRange(Scanners.AiFolders());
@@ -19,7 +20,7 @@ Console.WriteLine();
 for (int i = 0; i < items.Count; i++)
 {
     var item = items[i];
-    Console.WriteLine($"[{i + 1}] {item.Label} — {item.FormattedSize} — {item.Risk}");
+    Console.WriteLine($"[{i + 1}] {item.Label} — {item.FormattedSize} — {item.Risk} — {item.ActionDescription}");
 }
 
 Console.WriteLine();
