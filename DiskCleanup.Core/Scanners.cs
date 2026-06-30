@@ -87,15 +87,14 @@ public static class Scanners
                             Action: ActionKind.DeleteFolder,
                             Reason: "pnpm's shared package cache for this WSL distro, used by every pnpm project here. Deleting it doesn't remove or break any project - the next pnpm install anywhere just re-fetches/re-links packages from the registry instead of this local cache, which is slower but not destructive."));
 
-                    var projects = System.IO.Path.Combine(userDir, "projects");
-                    if (Directory.Exists(projects))
+                    foreach (var buildDir in FindBuildDirs(userDir))
                     {
-                        foreach (var buildDir in FindBuildDirs(projects))
-                        {
-                            var rel = System.IO.Path.GetRelativePath(projects, buildDir);
-                            items.Add(new CheckItem($"WSL ({distro}) ~/projects/{rel.Replace('\\', '/')}", GetDirectorySize(buildDir), "SAFE", buildDir, Action: ActionKind.DeleteFolder));
-                        }
+                        var rel = System.IO.Path.GetRelativePath(userDir, buildDir);
+                        items.Add(new CheckItem($"WSL ({distro}) ~/{rel.Replace('\\', '/')}", GetDirectorySize(buildDir), "SAFE", buildDir, Action: ActionKind.DeleteFolder));
                     }
+
+                    foreach (var claudeItem in ScanClaudeFolder(System.IO.Path.Combine(userDir, ".claude")))
+                        items.Add(claudeItem with { Label = $"WSL ({distro}) {claudeItem.Label}" });
                 }
             }
         }
@@ -147,6 +146,42 @@ public static class Scanners
                     _ => "docker system prune"
                 };
                 items.Add(new CheckItem($"Docker {type} (reclaimable)", 0, "REVIEW", SizeOverride: reclaimable, Action: ActionKind.SuggestCommand, CommandSuggestion: command));
+            }
+        }
+        catch { }
+        return items;
+    }
+
+    // Docker()'s "reclaimable" rows only see Docker's own logical accounting
+    // (docker system df). The physical .vhdx file backing Docker Desktop's
+    // WSL2 disk grows but never auto-shrinks on Windows, even after pruning -
+    // this scanner looks at the file directly instead.
+    public static List<CheckItem> DockerVhdxBloat(long thresholdBytes = 20L * 1024 * 1024 * 1024)
+    {
+        var items = new List<CheckItem>();
+        var dockerWslDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Docker", "wsl");
+        if (!Directory.Exists(dockerWslDir)) return items;
+
+        try
+        {
+            // Recursive, not a hardcoded subfolder name - the exact layout
+            // varies by Docker Desktop version (confirmed "main" on this
+            // machine, other sources have guessed "disk"/"data").
+            foreach (var path in Directory.EnumerateFiles(dockerWslDir, "*.vhdx", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var size = new FileInfo(path).Length;
+                    if (size < thresholdBytes) continue;
+
+                    items.Add(new CheckItem(
+                        $"Docker WSL2 disk image ({System.IO.Path.GetFileName(path)})",
+                        size, "REVIEW", path,
+                        Action: ActionKind.SuggestCommand,
+                        CommandSuggestion: $"wsl --shutdown, then run diskpart and enter: select vdisk file=\"{path}\" / compact vdisk / exit",
+                        Reason: "Docker Desktop's virtual disk grows but never automatically shrinks on Windows, even after `docker system prune`. This size reflects space allocated over time, not necessarily currently-active data - compacting is safe and doesn't delete anything Docker is using."));
+                }
+                catch { }
             }
         }
         catch { }
