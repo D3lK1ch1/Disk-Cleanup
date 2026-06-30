@@ -37,6 +37,7 @@ public partial class MainWindow : Window
             result.AddRange(Scanners.StalePackages());
             result.AddRange(Scanners.AiFolders());
             result.AddRange(Scanners.InstalledAppsBySize());
+            result.AddRange(Scanners.PersonalFolders());
             return result;
         });
 
