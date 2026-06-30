@@ -12,6 +12,7 @@ items.AddRange(Scanners.DownloadsTopFolders());
 items.AddRange(Scanners.StalePackages());
 items.AddRange(Scanners.AiFolders());
 items.AddRange(Scanners.InstalledAppsBySize());
+items.AddRange(Scanners.PersonalFolders());
 
 Console.WriteLine("disk-cleanup — scan results");
 Console.WriteLine("============================");
