@@ -24,20 +24,22 @@ public partial class MainWindow : Window
         StatusText.Text = "Scanning...";
         LogBox.Clear();
 
+        var warnings = new List<string>();
+
         var items = await Task.Run(() =>
         {
             var result = new List<CheckItem>();
-            result.AddRange(Scanners.RecycleBin());
+            result.AddRange(Scanners.RecycleBin(warnings));
             result.AddRange(Scanners.TempFolders());
-            result.AddRange(Scanners.VsCodeCache());
-            result.AddRange(Scanners.Wsl());
-            result.AddRange(Scanners.Docker());
-            result.AddRange(Scanners.DockerVhdxBloat());
-            result.AddRange(Scanners.DownloadsTopFolders());
-            result.AddRange(Scanners.StalePackages());
-            result.AddRange(Scanners.AiFolders());
-            result.AddRange(Scanners.InstalledAppsBySize());
-            result.AddRange(Scanners.PersonalFolders());
+            result.AddRange(Scanners.VsCodeCache(warnings));
+            result.AddRange(Scanners.Wsl(warnings));
+            result.AddRange(Scanners.Docker(warnings));
+            result.AddRange(Scanners.DockerVhdxBloat(warnings: warnings));
+            result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
+            result.AddRange(Scanners.StalePackages(warnings: warnings));
+            result.AddRange(Scanners.AiFolders(warnings));
+            result.AddRange(Scanners.InstalledAppsBySize(warnings: warnings));
+            result.AddRange(Scanners.PersonalFolders(warnings: warnings));
             return result;
         });
 
@@ -45,7 +47,16 @@ public partial class MainWindow : Window
         ApplyFilter();
         UpdateFreeSpaceText();
 
-        StatusText.Text = $"{_allItems.Count} items found.";
+        if (warnings.Count > 0)
+        {
+            StatusText.Text = $"{_allItems.Count} items found ({warnings.Count} warning(s) — see log below).";
+            LogBox.Text = "Warnings (some categories may be incomplete):\n" +
+                string.Join("\n", warnings.Select(w => $"- {w}"));
+        }
+        else
+        {
+            StatusText.Text = $"{_allItems.Count} items found.";
+        }
         ScanButton.IsEnabled = true;
     }
 

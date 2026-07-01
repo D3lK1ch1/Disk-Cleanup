@@ -46,6 +46,7 @@
                 <DataGridTextColumn Header="Item" Binding="{Binding Label}" Width="*" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="100" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Risk" Binding="{Binding Risk}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Action" Binding="{Binding ActionDescription}" Width="130" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 

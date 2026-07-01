@@ -1,18 +1,19 @@
 using DiskCleanup.Core;
 
 var items = new List<CheckItem>();
+var warnings = new List<string>();
 
-items.AddRange(Scanners.RecycleBin());
+items.AddRange(Scanners.RecycleBin(warnings));
 items.AddRange(Scanners.TempFolders());
-items.AddRange(Scanners.VsCodeCache());
-items.AddRange(Scanners.Wsl());
-items.AddRange(Scanners.Docker());
-items.AddRange(Scanners.DockerVhdxBloat());
-items.AddRange(Scanners.DownloadsTopFolders());
-items.AddRange(Scanners.StalePackages());
-items.AddRange(Scanners.AiFolders());
-items.AddRange(Scanners.InstalledAppsBySize());
-items.AddRange(Scanners.PersonalFolders());
+items.AddRange(Scanners.VsCodeCache(warnings));
+items.AddRange(Scanners.Wsl(warnings));
+items.AddRange(Scanners.Docker(warnings));
+items.AddRange(Scanners.DockerVhdxBloat(warnings: warnings));
+items.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
+items.AddRange(Scanners.StalePackages(warnings: warnings));
+items.AddRange(Scanners.AiFolders(warnings));
+items.AddRange(Scanners.InstalledAppsBySize(warnings: warnings));
+items.AddRange(Scanners.PersonalFolders(warnings: warnings));
 
 Console.WriteLine("disk-cleanup — scan results");
 Console.WriteLine("============================");
@@ -26,6 +27,15 @@ for (int i = 0; i < items.Count; i++)
 
 Console.WriteLine();
 Console.WriteLine($"{items.Count} items found.");
+
+if (warnings.Count > 0)
+{
+    Console.WriteLine();
+    Console.WriteLine("Warnings (some categories may be incomplete):");
+    foreach (var warning in warnings)
+        Console.WriteLine($"  - {warning}");
+}
+
 Console.WriteLine();
 
 Console.Write("Enter numbers to act on (e.g. 1,2,5 or all-safe), or press Enter to quit: ");

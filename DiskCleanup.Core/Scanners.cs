@@ -8,7 +8,7 @@ namespace DiskCleanup.Core;
 
 public static class Scanners
 {
-    public static List<CheckItem> RecycleBin()
+    public static List<CheckItem> RecycleBin(List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         try
@@ -25,7 +25,7 @@ public static class Scanners
             }
             items.Add(new CheckItem("Recycle Bin", total, "SAFE", Action: ActionKind.EmptyRecycleBin));
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"Recycle Bin: could not read ({ex.Message})"); }
         return items;
     }
 
@@ -44,7 +44,7 @@ public static class Scanners
         return items;
     }
 
-    public static List<CheckItem> VsCodeCache()
+    public static List<CheckItem> VsCodeCache(List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         var tempRoot = System.IO.Path.GetTempPath();
@@ -53,16 +53,16 @@ public static class Scanners
             foreach (var dir in Directory.EnumerateDirectories(tempRoot, "*CachedExtensionVSIXs*"))
                 items.Add(new CheckItem($"VS Code extension cache ({System.IO.Path.GetFileName(dir)})", GetDirectorySize(dir), "SAFE", dir, Action: ActionKind.DeleteFolder));
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"VS Code extension cache: could not scan Temp folder ({ex.Message})"); }
         return items;
     }
 
-    public static List<CheckItem> Wsl()
+    public static List<CheckItem> Wsl(List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         try
         {
-            foreach (var distro in GetWslDistros())
+            foreach (var distro in GetWslDistros(warnings))
             {
                 var basePath = $@"\\wsl.localhost\{distro}\home";
                 if (!Directory.Exists(basePath)) continue;
@@ -99,16 +99,16 @@ public static class Scanners
                         items.Add(new CheckItem($"WSL ({distro}) ~/{rel.Replace('\\', '/')}", GetDirectorySize(buildDir), "SAFE", buildDir, Action: ActionKind.DeleteFolder, Reason: buildReason));
                     }
 
-                    foreach (var claudeItem in ScanClaudeFolder(System.IO.Path.Combine(userDir, ".claude")))
+                    foreach (var claudeItem in ScanClaudeFolder(System.IO.Path.Combine(userDir, ".claude"), warnings))
                         items.Add(claudeItem with { Label = $"WSL ({distro}) {claudeItem.Label}" });
                 }
             }
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"WSL: scan failed ({ex.Message})"); }
         return items;
     }
 
-    public static List<CheckItem> Docker()
+    public static List<CheckItem> Docker(List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         try
@@ -124,7 +124,11 @@ public static class Scanners
 
             var output = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit(5000);
-            if (proc.ExitCode != 0) return items;
+            if (proc.ExitCode != 0)
+            {
+                warnings?.Add("Docker: 'docker system df' failed — is Docker Desktop running?");
+                return items;
+            }
 
             // Skip the header row, parse the rest.
             var lines = output.Split('\n').Skip(1);
@@ -154,7 +158,7 @@ public static class Scanners
                 items.Add(new CheckItem($"Docker {type} (reclaimable)", 0, "REVIEW", SizeOverride: reclaimable, Action: ActionKind.SuggestCommand, CommandSuggestion: command));
             }
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"Docker: could not query ({ex.Message})"); }
         return items;
     }
 
@@ -162,7 +166,7 @@ public static class Scanners
     // (docker system df). The physical .vhdx file backing Docker Desktop's
     // WSL2 disk grows but never auto-shrinks on Windows, even after pruning -
     // this scanner looks at the file directly instead.
-    public static List<CheckItem> DockerVhdxBloat(long thresholdBytes = 20L * 1024 * 1024 * 1024)
+    public static List<CheckItem> DockerVhdxBloat(long thresholdBytes = 20L * 1024 * 1024 * 1024, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         var dockerWslDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Docker", "wsl");
@@ -190,11 +194,11 @@ public static class Scanners
                 catch { }
             }
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"Docker WSL2 disk scan: could not enumerate .vhdx files ({ex.Message})"); }
         return items;
     }
 
-    public static List<CheckItem> DownloadsTopFolders(int topN = 5)
+    public static List<CheckItem> DownloadsTopFolders(int topN = 5, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         var downloads = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
@@ -215,7 +219,7 @@ public static class Scanners
             foreach (var (path, size) in entries)
                 items.Add(new CheckItem($"Downloads\\{System.IO.Path.GetFileName(path)}", size, "REVIEW", path, Action: ActionKind.MoveFolderToRecycleBin));
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"Downloads: could not scan ({ex.Message})"); }
         return items;
     }
 
@@ -251,7 +255,7 @@ public static class Scanners
     public static bool IsSharedRuntimePackage(string folderName) =>
         SharedRuntimePackagePrefixes.Any(p => folderName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 
-    public static List<CheckItem> StalePackages(int monthsThreshold = 6)
+    public static List<CheckItem> StalePackages(int monthsThreshold = 6, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         var packagesDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages");
@@ -295,7 +299,7 @@ public static class Scanners
                 catch { }
             }
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"AppData\\Local\\Packages: could not scan ({ex.Message})"); }
         return items;
     }
 
@@ -333,7 +337,7 @@ public static class Scanners
         return names;
     }
 
-    public static List<CheckItem> InstalledAppsBySize(int topN = 10)
+    public static List<CheckItem> InstalledAppsBySize(int topN = 10, List<string>? warnings = null)
     {
         var apps = new List<(string Name, long SizeBytes)>();
         var keys = new[]
@@ -363,7 +367,7 @@ public static class Scanners
                     catch { }
                 }
             }
-            catch { }
+            catch (Exception ex) { warnings?.Add($"Installed apps: could not read {hive.Name}\\{path} ({ex.Message})"); }
         }
 
         return apps.OrderByDescending(a => a.SizeBytes)
@@ -372,7 +376,7 @@ public static class Scanners
             .ToList();
     }
 
-    public static List<CheckItem> PersonalFolders(int topN = 5)
+    public static List<CheckItem> PersonalFolders(int topN = 5, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         var folders = new[]
@@ -401,17 +405,17 @@ public static class Scanners
                         Action: ActionKind.MoveFolderToRecycleBin,
                         Reason: $"One of your largest items in {folderName}. Moving to Recycle Bin is recoverable."));
             }
-            catch { }
+            catch (Exception ex) { warnings?.Add($"{folderName}: could not scan ({ex.Message})"); }
         }
         return items;
     }
 
-    public static List<CheckItem> AiFolders()
+    public static List<CheckItem> AiFolders(List<string>? warnings = null)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var items = new List<CheckItem>();
-        items.AddRange(ScanClaudeFolder(System.IO.Path.Combine(home, ".claude")));
-        items.AddRange(ScanCodexFolder(System.IO.Path.Combine(home, ".codex")));
+        items.AddRange(ScanClaudeFolder(System.IO.Path.Combine(home, ".claude"), warnings));
+        items.AddRange(ScanCodexFolder(System.IO.Path.Combine(home, ".codex"), warnings));
         return items;
     }
 
@@ -427,7 +431,7 @@ public static class Scanners
     // it. Only these verified-safe, disposable subpaths are scanned. sessions/
     // and ide/ are deliberately excluded - they're live PID-keyed process state
     // for *running* instances, not history.
-    public static List<CheckItem> ScanClaudeFolder(string root)
+    public static List<CheckItem> ScanClaudeFolder(string root, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         if (!Directory.Exists(root)) return items;
@@ -489,7 +493,7 @@ public static class Scanners
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { warnings?.Add($".claude/projects: could not scan ({ex.Message})"); }
         }
 
         return items;
@@ -539,7 +543,7 @@ public static class Scanners
     // .sandbox-secrets are deliberately excluded - they hold live executables,
     // ACL state, and a sandbox_users.json, not disposable history. memories/,
     // rules/, skills/ are persistent/user-authored content, also excluded.
-    public static List<CheckItem> ScanCodexFolder(string root)
+    public static List<CheckItem> ScanCodexFolder(string root, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
         if (!Directory.Exists(root)) return items;
@@ -587,7 +591,7 @@ public static class Scanners
                         size, "REVIEW", jsonl, Action: ActionKind.MoveFileToRecycleBin, Reason: reason));
                 }
             }
-            catch { }
+            catch (Exception ex) { warnings?.Add($".codex/sessions: could not scan ({ex.Message})"); }
         }
 
         return items;
@@ -720,7 +724,7 @@ public static class Scanners
         catch { return 0; }
     }
 
-    static List<string> GetWslDistros()
+    static List<string> GetWslDistros(List<string>? warnings = null)
     {
         var distros = new List<string>();
         try
@@ -742,7 +746,7 @@ public static class Scanners
                 .Where(l => !string.IsNullOrWhiteSpace(l))
                 .ToList();
         }
-        catch { }
+        catch (Exception ex) { warnings?.Add($"WSL: could not list distros ({ex.Message})"); }
         return distros;
     }
 
