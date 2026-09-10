@@ -65,11 +65,11 @@ public static class ActionExecutor
 
         if (deleted == 0)
             return new ActionResult(item, false,
-                $"Could not delete any entries. Blocked by: {string.Join("; ", failures)}. " +
+                $"Could not delete any entries. Blocked by:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}{Environment.NewLine}" +
                 $"Run elevated: Remove-Item -Recurse -Force \"{item.Path}\\*\"");
 
         return new ActionResult(item, true,
-            $"Cleared {deleted} entries, skipped {failures.Count}. Blocked by: {string.Join("; ", failures)}.");
+            $"Cleared {deleted} entries, skipped {failures.Count}. Blocked by:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
     }
 
     static ActionResult DeleteFolder(CheckItem item)
@@ -85,9 +85,9 @@ public static class ActionExecutor
         }
         catch (Exception ex)
         {
-            var detail = failures.Count > 0 ? string.Join("; ", failures) : ex.Message;
+            var detail = failures.Count > 0 ? string.Join(Environment.NewLine, failures) : ex.Message;
             return new ActionResult(item, false,
-                $"Could not delete folder. Blocked by: {detail}. " +
+                $"Could not delete folder. Blocked by:{Environment.NewLine}{detail}{Environment.NewLine}" +
                 $"Run elevated: Remove-Item -Recurse -Force \"{item.Path}\"");
         }
     }
