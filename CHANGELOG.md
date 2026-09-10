@@ -1,5 +1,46 @@
 # Changelog
 
+## Session 2026-09-11
+
+### Fixed
+- **WPF widget: log panel couldn't be resized, and maximizing the window didn't grow it.**
+  `MainWindow.xaml`'s log row was a hardcoded `Height="120"` while only the DataGrid row was
+  `*` — every extra pixel from maximizing went to the grid, never the log. Restructured into
+  a nested `Grid` (DataGrid + `GridSplitter` + Details pane + action bar, all inside outer
+  row 1) so a second `GridSplitter` between that block and the log negotiates space with the
+  DataGrid's `*` row directly. This nesting was necessary because a `GridSplitter` only ever
+  resizes its own immediate previous/next row — without it, dragging the log's splitter could
+  only push against the action bar (fixed to its buttons' natural height), not reach through
+  to the grid. Also dropped the Details pane's `ScrollViewer.MaxHeight="100"`, which capped it
+  below whatever height its own splitter gave it.
+- **Clean Selected could freeze the UI when a delete partially failed across many files.**
+  `ActionExecutor.cs`'s `DeleteContents`/`DeleteFolder` joined every blocked file into one
+  message with `string.Join("; ", failures)` — for a folder with hundreds of locked files
+  (e.g. `SoftwareDistribution\Download` mid-Windows-Update), this produced one single
+  multi-thousand-character line with no breaks. WPF's `LogBox` (`TextWrapping="Wrap"`) has to
+  recompute word-wrap points across that entire run on every layout pass — once when the text
+  is set, and again on every resize/maximize — which was very likely the real driver of the
+  maximize/minimize freeze reported earlier this session, not row count (confirmed row count
+  wasn't it: an empty, unscanned grid resized smoothly; a populated one didn't). Changed both
+  join sites (plus `DeleteFolder`'s catch-block `detail` var) to join failures with
+  `Environment.NewLine` instead, in shared `Core` code — fixes the console app's output too,
+  not just WPF's.
+
+### Known gaps
+- The `Environment.NewLine` fix reduced but did not eliminate the freeze on a large
+  partial-delete failure — a plain WPF `TextBox` with wrapped content still doesn't scale well
+  once a log runs into the hundreds of lines. A real fix would mean not laying out the whole
+  log as one `TextBox.Text` blob at all — e.g. a virtualized `ListBox`/`ItemsControl` bound to
+  individual log lines, so only visible lines get measured. Deferred; capped for this session.
+
+### Verification
+- Live runs via `DiskCleanup.Wpf`: confirmed both `GridSplitter`s drag as expected (grid vs.
+  details, and the whole top block vs. log); confirmed the maximize freeze correlates with
+  DataGrid row count by comparing an empty grid (smooth) against a populated one (froze)
+  *before* the `ActionExecutor` fix; re-ran Scan → Clean Selected against the same
+  `SoftwareDistribution\Download` access-denied scenario after the fix — freeze is smaller but
+  still present.
+
 ## Session 2026-08-31
 
 ### Added
@@ -40,11 +81,7 @@
 - `dotnet build` (solution-wide) — 0 warnings, 0 errors.
 - `dotnet test` — 77 passed, 0 failed, 0 skipped (74 existing + 3 new ReadOnly tests).
 - Live run via `DiskCleanup.Avalonia`: Clean Selected against real Recycle Bin/User Temp/
-  Windows Temp/Windows Update cache entries — confirm dialog appeared listing selected items,
-  Yes proceeded, resulting log matched the established `[OK]`/`[FAILED]` format exactly. A
-  second live run after the ReadOnly fix confirmed the previously-failing git-object files
-  (inside a scratch `LibreCrawl\.git\objects\pack\...` path) now clear instead of appearing
-  under "Blocked by."
+  Windows Temp/Windows Update cache entries — confirm dialog appeared listing selected items, Yes proceeded, resulting log matched the established `[OK]`/`[FAILED]` format exactly. A second live run after the ReadOnly fix confirmed the previously-failing git-object files (inside a scratch `LibreCrawl\.git\objects\pack\...` path) now clear instead of appearing under "Blocked by."
 
 ## Session 2026-08-28
 
@@ -61,12 +98,8 @@
   since both call the same Core scanners.
 - **Avalonia app crashed on startup before any window appeared.** `MainWindow.axaml`'s
   `RiskFilterCombo` set `SelectedIndex="0"` directly in XAML, which fires `SelectionChanged`
-  during `InitializeComponent()` — before `ItemsList` (declared later in the same file) is
-  constructed. The handler's `ApplyFilter()` dereferenced `ItemsList` and threw
-  `NullReferenceException`, so `dotnet run` returned to the prompt immediately with no visible
-  window and no printed error (the exception was only visible running `dotnet run` directly,
-  not backgrounded). Fixed by removing `SelectedIndex` from XAML and setting it in the
-  `MainWindow` constructor after `InitializeComponent()`, once every named control exists.
+  during `InitializeComponent()` — before `ItemsList` (declared later in the same file) is constructed. The handler's `ApplyFilter()` dereferenced `ItemsList` and threw
+  `NullReferenceException`, so `dotnet run` returned to the prompt immediately with no visible window and no printed error (the exception was only visible running `dotnet run` directly, not backgrounded). Fixed by removing `SelectedIndex` from XAML and setting it in the `MainWindow` constructor after `InitializeComponent()`, once every named control exists.
 
 ### Known gaps
 - Both fixes verified via `dotnet build` (0 warnings, 0 errors) and `dotnet test` (74 passed,
